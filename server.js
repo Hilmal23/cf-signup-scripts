@@ -67,9 +67,10 @@ app.use((req, res, next) => {
   return res.status(401).json({ error: "Unauthorized" });
 });
 
-app.use("/v1", openaiRouter({ pool, maxRetries: MAX_RETRIES, log })); // chat + embeddings
-app.use("/ai", runRouter({ pool, maxRetries: MAX_RETRIES, log })); // /ai/run/:model (generic)
-app.use("/", adminRouter({ db, pool, ninePath: NINE_DB, log }));
+const pick = () => pool.peekAccount(); // shared account picker for metadata + model resolve
+app.use("/v1", openaiRouter({ pool, maxRetries: MAX_RETRIES, log, pick })); // chat + embeddings
+app.use("/ai", runRouter({ pool, maxRetries: MAX_RETRIES, log, pick })); // /ai/run/:model (generic)
+app.use("/", adminRouter({ db, pool, ninePath: NINE_DB, log, pick }));
 
 // Serve the built dashboard (SPA) if present.
 const webDist = join(__dirname, "web", "dist");

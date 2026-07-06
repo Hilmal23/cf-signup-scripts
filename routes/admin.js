@@ -30,10 +30,8 @@ function shapeAccount(row) {
   };
 }
 
-export function adminRouter({ db, pool, ninePath, log }) {
+export function adminRouter({ db, pool, ninePath, log, pick }) {
   const router = Router();
-
-  const pick = () => pool.peekAccount();
 
   router.get("/health", (_req, res) => res.json({ status: "ok", pool: pool.stats() }));
 
@@ -43,7 +41,11 @@ export function adminRouter({ db, pool, ninePath, log }) {
       const models = await getModels(pick, log.warn);
       res.json({
         object: "list",
-        data: models.map((m) => ({ id: m.id, object: "model", owned_by: "cloudflare" })),
+        data: models.map((m) => {
+          const i = m.id.lastIndexOf("/");
+          const short = i >= 0 ? m.id.slice(i + 1) : m.id;
+          return { id: m.id, short, object: "model", owned_by: "cloudflare" };
+        }),
       });
     } catch (e) {
       log.error?.(`/v1/models failed: ${e.message}`);

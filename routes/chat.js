@@ -7,6 +7,7 @@
 
 import { Router } from "express";
 import { chatUrl, embeddingsUrl, runUrl, callNormal, callStream } from "../lib/cf.js";
+import { resolveModel } from "../lib/models.js";
 
 // CF rejects multipart content — collapse OpenAI content arrays to a string.
 function flattenContent(messages) {
@@ -84,18 +85,21 @@ async function withPool({ pool, maxRetries, res, buildUrl, body, stream, model, 
 }
 
 // OpenAI-compatible router: /v1/chat/completions and /v1/embeddings.
-export function openaiRouter({ pool, maxRetries, log }) {
+export function openaiRouter({ pool, maxRetries, log, pick }) {
   const router = Router();
 
   router.post("/chat/completions", async (req, res) => {
     const body = req.body;
     if (!body || typeof body !== "object") return res.status(400).json({ error: "Invalid JSON" });
     if (!body.model) return res.status(400).json({ error: "model required" });
+    const r = await resolveModel(body.model, pick, log.warn);
+    if (r.error) return res.status(r.status).json({ error: r.error, ...(r.candidates ? { candidates: r.candidates } : {}) });
+    body.model = r.id; // replace with full id for upstream CF + neuron rate lookup
     if (Array.isArray(body.messages)) body.messages = flattenContent(body.messages);
     return withPool({
       pool, maxRetries, res, log,
       buildUrl: (id) => chatUrl(id),
-      body, model: body.model, stream: body.stream === true,
+      body, model: r.id, stream: body.stream === true,
     });
   });
 
@@ -103,10 +107,13 @@ export function openaiRouter({ pool, maxRetries, log }) {
     const body = req.body;
     if (!body || typeof body !== "object") return res.status(400).json({ error: "Invalid JSON" });
     if (!body.model) return res.status(400).json({ error: "model required" });
+    const r = await resolveModel(body.model, pick, log.warn);
+    if (r.error) return res.status(r.status).json({ error: r.error, ...(r.candidates ? { candidates: r.candidates } : {}) });
+    body.model = r.id;
     return withPool({
       pool, maxRetries, res, log,
       buildUrl: (id) => embeddingsUrl(id),
-      body, model: body.model, stream: false,
+      body, model: r.id, stream: false,
     });
   });
 
@@ -114,18 +121,20 @@ export function openaiRouter({ pool, maxRetries, log }) {
 }
 
 // Generic CF router: /ai/run/:model — passthrough for any task/model.
-export function runRouter({ pool, maxRetries, log }) {
+export function runRouter({ pool, maxRetries, log, pick }) {
   const router = Router();
   // Model ids contain slashes (@cf/meta/m2m100-1.2b), so use a wildcard that
-  // matches the whole remaining path, then strip the leading slash.
+  // matches the whole remaining path. Short ids are resolved to full first.
   router.post("/run/*", async (req, res) => {
     const model = req.params[0];
     if (!model) return res.status(400).json({ error: "model required in path" });
+    const r = await resolveModel(model, pick, log.warn);
+    if (r.error) return res.status(r.status).json({ error: r.error, ...(r.candidates ? { candidates: r.candidates } : {}) });
     const body = req.body ?? {};
     return withPool({
       pool, maxRetries, res, log,
-      buildUrl: (id) => runUrl(id, model),
-      body, model, stream: false,
+      buildUrl: (id) => runUrl(id, r.id),
+      body, model: r.id, stream: false,
     });
   });
   return router;

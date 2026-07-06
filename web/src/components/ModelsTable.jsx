@@ -109,7 +109,10 @@ export default function ModelsTable() {
     return Number.isFinite(t) && now - t < NEW_MS;
   };
 
-  const rows = filtered.map((m) => (
+  const rows = filtered.map((m) => {
+    const slash = m.name.lastIndexOf("/");
+    const short = slash >= 0 ? m.name.slice(slash + 1) : m.name;
+    return (
     <Table.Tr key={m.id}>
       <Table.Td>
         <Stack gap={4}>
@@ -122,8 +125,22 @@ export default function ModelsTable() {
             )}
             <CopyButton value={m.name} timeout={1500}>
               {({ copied, copy }) => (
-                <Tooltip label={copied ? "Copied" : "Copy model id"} withArrow>
+                <Tooltip label={copied ? "Copied" : "Copy full id"} withArrow>
                   <ActionIcon variant="subtle" color={copied ? "teal" : "gray"} onClick={copy}>
+                    {copied ? "✓" : "⧉"}
+                  </ActionIcon>
+                </Tooltip>
+              )}
+            </CopyButton>
+          </Group>
+          {/* Short id — the proxy accepts this too. Copy for quick use. */}
+          <Group gap={4} wrap="nowrap">
+            <Text size="xs" c="dimmed">short:</Text>
+            <Code size="xs" c="dimmed">{short}</Code>
+            <CopyButton value={short} timeout={1500}>
+              {({ copied, copy }) => (
+                <Tooltip label={copied ? "Copied" : "Copy short id"} withArrow>
+                  <ActionIcon variant="subtle" color={copied ? "teal" : "gray"} size="xs" onClick={copy}>
                     {copied ? "✓" : "⧉"}
                   </ActionIcon>
                 </Tooltip>
@@ -157,7 +174,8 @@ export default function ModelsTable() {
         </Text>
       </Table.Td>
     </Table.Tr>
-  ));
+    );
+  });
 
   return (
     <Stack gap="sm">

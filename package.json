@@ -1,0 +1,17 @@
+{
+  "name": "cf-proxy",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "description": "OpenAI-compatible Cloudflare Workers AI proxy with account-pool rotation and neuron tracking",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "node --no-warnings server.js",
+    "dev": "node --no-warnings --watch server.js",
+    "build": "npm --prefix web install && npm --prefix web run build",
+    "selftest": "node --no-warnings lib/neurons.js --selftest"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}

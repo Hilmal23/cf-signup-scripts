@@ -13,6 +13,7 @@ import {
 } from "@mantine/core";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { ChevronDown, ChevronRight, Wrench, ArrowRight } from "lucide-react";
 
 const ROLE_COLORS = {
   system: "violet",
@@ -54,9 +55,10 @@ function Collapsible({ label, count, defaultOpen = false, children }) {
   return (
     <Stack gap={4}>
       <UnstyledButton onClick={() => setOpen((o) => !o)}>
-        <Text size="xs" fw={700}>
-          {open ? "▾" : "▸"} {label}{count != null ? ` (${count})` : ""}
-        </Text>
+        <Group gap={6} align="center" wrap="nowrap">
+          {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          <Text size="xs" fw={700}>{label}{count != null ? ` (${count})` : ""}</Text>
+        </Group>
       </UnstyledButton>
       <Collapse in={open}>{children}</Collapse>
     </Stack>
@@ -76,11 +78,14 @@ function Bubble({ role, children }) {
   );
 }
 
-// Render message content — markdown for assistant, plain for user/tool.
-function Content({ content, role, asMarkdown }) {
+// Render message content. Markdown for system & assistant (both commonly use
+// markdown: system prompts with headings/bold, assistant answers with code);
+// plain pre-wrap for user/tool inputs (raw text, no interpretation).
+function Content({ content, role }) {
   if (content == null || content === "") return <Text size="sm" c="dimmed" fs="italic">(empty)</Text>;
   const str = typeof content === "string" ? content : JSON.stringify(content);
-  if (asMarkdown && role === "assistant") {
+  const asMarkdown = role === "assistant" || role === "system";
+  if (asMarkdown) {
     return (
       <Box className="payload-markdown" style={{ fontSize: 13, lineHeight: 1.5 }}>
         <Markdown
@@ -122,7 +127,7 @@ function ToolsPanel({ tools }) {
             .join(", ");
           return (
             <Group key={i} gap="xs" wrap="nowrap">
-              <ThemeIcon size="xs" variant="light" color="orange">⚙</ThemeIcon>
+              <ThemeIcon size="xs" variant="light" color="orange"><Wrench size={12} /></ThemeIcon>
               <Code size="xs" color="orange">{fn.name}</Code>
               <Text size="xs" c="dimmed">({paramStr || "no params"})</Text>
             </Group>
@@ -145,11 +150,21 @@ function ChatView({ obj, isResponse }) {
 
   return (
     <Stack gap="sm">
-      {/* System prompt(s) as boxes on top */}
+      {/* System prompt(s) as boxes on top — a translucent violet tint that adapts
+          to light/dark via color-mix over the surface color (hardcoded violet-1
+          was jarring in dark mode; violet-9 killed contrast in light mode). */}
       {messages.filter((m) => m.role === "system").map((m, i) => (
-        <Box key={`s${i}`} p="sm" bg="var(--mantine-color-violet-1)" style={{ borderRadius: 6, borderLeft: "3px solid var(--mantine-color-violet-6)" }} c="dark">
+        <Box
+          key={`s${i}`}
+          p="sm"
+          style={{
+            borderRadius: 6,
+            borderLeft: "3px solid var(--mantine-color-violet-6)",
+            backgroundColor: "color-mix(in srgb, var(--mantine-color-violet-6) 12%, var(--mantine-color-body))",
+          }}
+        >
           <Text size="xs" fw={700} c="violet" mb={4}>SYSTEM</Text>
-          <Text size="sm" style={{ whiteSpace: "pre-wrap" }}>{typeof m.content === "string" ? m.content : JSON.stringify(m.content)}</Text>
+          <Content content={m.content} role="system" />
         </Box>
       ))}
 
@@ -165,8 +180,9 @@ function ChatView({ obj, isResponse }) {
                 {toolCalls?.length > 0 && (
                   <Box>
                     {toolCalls.map((tc, j) => (
-                      <Group key={j} gap={4} wrap="nowrap">
-                        <Text size="xs" c="teal" fw={700}>→ calls</Text>
+                      <Group key={j} gap={4} wrap="nowrap" align="center">
+                        <ArrowRight size={13} color="var(--mantine-color-teal-6)" />
+                        <Text size="xs" c="teal" fw={700}>calls</Text>
                         <Code size="xs" c="teal">{fmtToolCall(tc)}</Code>
                       </Group>
                     ))}
@@ -175,18 +191,24 @@ function ChatView({ obj, isResponse }) {
                 {/* reasoning split (assistant only) */}
                 {reasoning && m.role === "assistant" && (
                   <Collapsible label="Reasoning" defaultOpen={false}>
-                    <Box p="sm" bg="var(--mantine-color-gray-1)" style={{ borderRadius: 4 }} c="dimmed">
-                      <Text size="xs" style={{ whiteSpace: "pre-wrap", fontFamily: "monospace" }}>{reasoning}</Text>
+                    <Box
+                      p="sm"
+                      style={{
+                        borderRadius: 4,
+                        backgroundColor: "color-mix(in srgb, var(--mantine-color-gray-6) 10%, var(--mantine-color-body))",
+                      }}
+                    >
+                      <Text size="xs" c="dimmed" style={{ whiteSpace: "pre-wrap", fontFamily: "monospace" }}>{reasoning}</Text>
                     </Box>
                   </Collapsible>
                 )}
                 {/* answer/content */}
                 {answer != null && answer !== "" && (
-                  <Content content={answer} role={m.role} asMarkdown={m.role === "assistant"} />
+                  <Content content={answer} role={m.role} />
                 )}
                 {/* tool result without content */}
                 {!answer && !toolCalls?.length && (
-                  <Content content={m.content} role={m.role} asMarkdown={false} />
+                  <Content content={m.content} role={m.role} />
                 )}
               </Stack>
             </Bubble>
@@ -208,7 +230,13 @@ export default function PayloadView({ body, kind }) {
     // Non-JSON (e.g. "[SSE stream]" or truncated/raw) — show as-is.
     return (
       <ScrollArea.Autosize mah={240} type="auto">
-        <Box p="sm" bg="var(--mantine-color-dark-8)" style={{ borderRadius: 4 }}>
+        <Box
+          p="sm"
+          style={{
+            borderRadius: 4,
+            backgroundColor: "color-mix(in srgb, var(--mantine-color-gray-6) 8%, var(--mantine-color-body))",
+          }}
+        >
           <Code block style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: 11 }}>{body}</Code>
         </Box>
       </ScrollArea.Autosize>
@@ -222,7 +250,13 @@ export default function PayloadView({ body, kind }) {
     // Non-chat JSON (embeddings, /ai/run result, etc.) — pretty JSON.
     return (
       <ScrollArea.Autosize mah={240} type="auto">
-        <Box p="sm" bg="var(--mantine-color-dark-8)" style={{ borderRadius: 4 }}>
+        <Box
+          p="sm"
+          style={{
+            borderRadius: 4,
+            backgroundColor: "color-mix(in srgb, var(--mantine-color-gray-6) 8%, var(--mantine-color-body))",
+          }}
+        >
           <Code block style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: 11 }}>
             {JSON.stringify(obj, null, 2)}
           </Code>

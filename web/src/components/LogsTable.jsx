@@ -17,6 +17,7 @@ import {
   Box,
 } from "@mantine/core";
 import { useInterval } from "@mantine/hooks";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { fetchLogs, clearLogs } from "../api.js";
 import { notifications } from "@mantine/notifications";
 import PayloadView from "./PayloadView.jsx";
@@ -121,7 +122,10 @@ export default function LogsTable() {
       <Table.Tr key={`${l.seq}-detail`}>
         <Table.Td colSpan={8} p={0}>
           <Collapse in={isOpen}>
-            <Box p="md" bg="var(--mantine-color-dark-7)">
+            <Box
+              p="md"
+              style={{ backgroundColor: "color-mix(in srgb, var(--mantine-color-gray-6) 6%, var(--mantine-color-body))" }}
+            >
               <Stack gap="md">
                 <PayloadSection label="Client Request (Input)" color="blue">
                   <PayloadView body={l.client_request} kind="client" />
@@ -214,14 +218,30 @@ export default function LogsTable() {
   );
 }
 
-// Labeled section wrapping a PayloadView (humanized) — colored left border.
-function PayloadSection({ label, color, children }) {
+// Labeled section wrapping a PayloadView (humanized) — colored left border,
+// collapsible header (click to hide/show, like the Tools/Reasoning panels).
+function PayloadSection({ label, color, defaultOpen = true, children }) {
+  const [open, setOpen] = useState(defaultOpen);
   return (
     <Stack gap={4}>
-      <Text size="xs" fw={700} c={color}>{label}</Text>
-      <Box p="sm" bg="var(--mantine-color-dark-8)" bd="1px solid var(--mantine-color-dark-5)" style={{ borderRadius: 4, borderLeft: `3px solid var(--mantine-color-${color}-6)` }}>
-        {children}
-      </Box>
+      <UnstyledButton onClick={() => setOpen((o) => !o)}>
+        <Group gap={6} align="center" wrap="nowrap">
+          {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          <Text size="xs" fw={700} c={color}>{label}</Text>
+        </Group>
+      </UnstyledButton>
+      <Collapse in={open}>
+        <Box
+          p="sm"
+          style={{
+            borderRadius: 4,
+            border: "1px solid var(--mantine-color-default-border)",
+            borderLeft: `3px solid var(--mantine-color-${color}-6)`,
+          }}
+        >
+          {children}
+        </Box>
+      </Collapse>
     </Stack>
   );
 }

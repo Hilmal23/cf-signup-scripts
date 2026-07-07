@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { chatUrl, embeddingsUrl, runUrl, callNormal, callStream } from "../lib/cf.js";
+import { chatUrl, embeddingsUrl, runUrl, callNormal, openStream, pumpStream } from "../lib/cf.js";
 import { resolveModel } from "../lib/models.js";
 import { captureBody } from "../lib/log.js";
 
@@ -54,43 +54,63 @@ async function withPool({ pool, maxRetries, res, buildUrl, body, stream, model, 
     };
     try {
       if (stream) {
-        let prepared = false;
-        const result = await callStream(url, account.api_key, body, (chunk) => {
-          if (!prepared) {
-            res.status(200);
-            res.setHeader("Content-Type", "text/event-stream");
-            res.setHeader("Cache-Control", "no-cache");
-            res.setHeader("X-CF-Proxy-Account", account.name || String(account.id));
-            prepared = true;
-          }
-          // Backpressure: wait for drain before pulling the next chunk.
-          if (!res.write(chunk)) return new Promise((r) => res.once("drain", r));
-        });
+        // For streaming we commit the 200 SSE response UP FRONT (before we even
+        // know the upstream status) so a heartbeat can keep the connection alive
+        // during CF's slow TTFB (glm-5.2: 40-80s). Trade-off: once committed we
+        // can't transparently retry on 429 — but a mid-stream retry would corrupt
+        // the client stream anyway. On upstream error we emit an SSE error event
+        // then end.
+        res.status(200);
+        res.setHeader("Content-Type", "text/event-stream");
+        res.setHeader("Cache-Control", "no-cache");
+        res.setHeader("X-Accel-Buffering", "no"); // caddy/nginx: don't buffer SSE
+        res.setHeader("X-CF-Proxy-Account", account.name || String(account.id));
+        res.flushHeaders();
 
-        if (result.status === 429) {
-          record(account, 429, { error_code: result.errorCode, provider_response: result.text?.slice(0, 1024) });
-          pool.mark429(account.id, result.errorCode);
-          continue;
+        let realDataStarted = false;
+        const heartbeat = setInterval(() => {
+          if (!realDataStarted && !res.writableEnded) res.write(": ping\n");
+        }, 15000);
+
+        const opened = await openStream(url, account.api_key, body);
+        if (opened.status === 429) {
+          clearInterval(heartbeat);
+          record(account, 429, { error_code: opened.errorCode, provider_response: captureBody(opened.text) });
+          pool.mark429(account.id, opened.errorCode);
+          // Headers already sent as 200 — surface the error as an SSE event, then end.
+          res.write(`data: {"error":"rate_limited","code":${opened.errorCode ?? 429}}\n\n`);
+          res.write("data: [DONE]\n\n");
+          return res.end();
         }
-        if (result.status >= 400) {
-          log.warn?.(`Account ${account.name} stream -> ${result.status}: ${result.text?.slice(0, 200)}`);
-          record(account, result.status, { error: result.text?.slice(0, 200), provider_response: result.text?.slice(0, 1024) });
-          return res.status(result.status).type("application/json").send(result.text);
+        if (opened.status >= 400) {
+          clearInterval(heartbeat);
+          log.warn?.(`Account ${account.name} stream -> ${opened.status}: ${opened.text?.slice(0, 200)}`);
+          record(account, opened.status, { error: opened.text?.slice(0, 200), provider_response: captureBody(opened.text) });
+          res.write(`data: {"error":"upstream_error","status":${opened.status}}\n\n`);
+          res.write("data: [DONE]\n\n");
+          return res.end();
         }
-        record(account, 200, { usage: result.usage, provider_response: "[SSE stream]" });
-        pool.markSuccess(account.id, model, result.usage);
+
+        const writeChunk = (chunk) => {
+          if (chunk && chunk.length) realDataStarted = true;
+          if (!res.write(chunk)) return new Promise((r) => res.once("drain", r));
+        };
+        const { usage } = await pumpStream(opened.stream, writeChunk);
+        clearInterval(heartbeat);
+        record(account, 200, { usage, provider_response: "[SSE stream]" });
+        pool.markSuccess(account.id, model, usage);
         return res.end();
       }
 
       const result = await callNormal(url, account.api_key, body);
       if (result.status === 429) {
-        record(account, 429, { error_code: result.errorCode, provider_response: result.text?.slice(0, 1024) });
+        record(account, 429, { error_code: result.errorCode, provider_response: captureBody(result.text) });
         pool.mark429(account.id, result.errorCode);
         continue;
       }
       if (result.status >= 400) {
         log.warn?.(`Account ${account.name} -> ${result.status}: ${result.text?.slice(0, 200)}`);
-        record(account, result.status, { error: result.text?.slice(0, 200), provider_response: result.text?.slice(0, 1024) });
+        record(account, result.status, { error: result.text?.slice(0, 200), provider_response: captureBody(result.text) });
         return res.status(result.status).type("application/json").send(result.text);
       }
       record(account, 200, { usage: result.usage, provider_response: captureBody(result.json) });

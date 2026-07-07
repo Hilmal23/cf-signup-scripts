@@ -27,7 +27,7 @@ function shapeAccount(row) {
   };
 }
 
-export function adminRouter({ db, pool, ninePath, log, pick }) {
+export function adminRouter({ db, pool, ninePath, log, pick, requestLog }) {
   const router = Router();
 
   router.get("/health", (_req, res) => res.json({ status: "ok", pool: pool.stats() }));
@@ -61,6 +61,10 @@ export function adminRouter({ db, pool, ninePath, log, pick }) {
   });
 
   router.get("/api/stats", (_req, res) => res.json(pool.stats()));
+
+  // Recent request log (ring buffer, newest-first). Not persisted.
+  router.get("/api/logs", (_req, res) => res.json({ logs: requestLog?.all() ?? [] }));
+  router.delete("/api/logs", (_req, res) => { requestLog?.clear(); res.json({ cleared: true }); });
 
   router.get("/api/accounts", (_req, res) => {
     const rows = db.prepare("SELECT * FROM accounts ORDER BY id").all();

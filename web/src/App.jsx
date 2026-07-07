@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { lazy, Suspense, useEffect, useState, useCallback } from "react";
 import {
   AppShell,
   Group,
@@ -18,6 +18,9 @@ import { notifications } from "@mantine/notifications";
 import StatsCards from "./components/StatsCards.jsx";
 import AccountsTable from "./components/AccountsTable.jsx";
 import ModelsTable from "./components/ModelsTable.jsx";
+// LogsTable pulls in react-markdown + remark-gfm (~big). Lazy-load it so the
+// markdown deps ship in a separate chunk, fetched only when the Logs tab opens.
+const LogsTable = lazy(() => import("./components/LogsTable.jsx"));
 import ImportButton from "./components/ImportButton.jsx";
 import { fetchAccounts, getKey, setKey } from "./api.js";
 
@@ -62,8 +65,8 @@ export default function App() {
   return (
     <AppShell header={{ height: 60 }} padding="md">
       <AppShell.Header>
-        <Group h="100%" px="md" justify="space-between">
-          <Group>
+        <Group h="100%" px="md" justify="space-between" wrap="wrap">
+          <Group gap="sm" wrap="nowrap">
             <Title order={3}>cf-proxy</Title>
             {stats && (
               <Badge color={stats.available > 0 ? "teal" : "red"} variant="light" size="lg">
@@ -109,6 +112,7 @@ export default function App() {
               <Tabs.List mb="md">
                 <Tabs.Tab value="accounts">Accounts</Tabs.Tab>
                 <Tabs.Tab value="models">Models</Tabs.Tab>
+                <Tabs.Tab value="logs">Logs</Tabs.Tab>
               </Tabs.List>
 
               <Tabs.Panel value="accounts">
@@ -122,6 +126,12 @@ export default function App() {
 
               <Tabs.Panel value="models">
                 <ModelsTable />
+              </Tabs.Panel>
+
+              <Tabs.Panel value="logs">
+                <Suspense fallback={<Center h={200}><Loader /></Center>}>
+                  <LogsTable />
+                </Suspense>
               </Tabs.Panel>
             </Tabs>
           </Stack>

@@ -20,9 +20,6 @@ import { useInterval } from "@mantine/hooks";
 import { fetchModels } from "../api.js";
 import { notifications } from "@mantine/notifications";
 
-// Live model list from Cloudflare (via /api/models). Cloudflare-hosted only
-// (third-party/partner models excluded server-side), sorted newest-first.
-// Read-only — CF is the source of truth, so there is no add/remove UI.
 const TASK_COLORS = {
   "Text Generation": "blue",
   "Text Embeddings": "grape",
@@ -97,10 +94,6 @@ export default function ModelsTable() {
     );
   }
 
-  // Badge models CF added within the last 30 days (by created_at). This is the
-  // true "newly released by Cloudflare" signal — not a fixed top-N. The badge
-  // disappears on its own as models age past the window, and appears on its own
-  // when CF releases a fresh model.
   const NEW_MS = 30 * 24 * 60 * 60 * 1000;
   const now = Date.now();
   const isNew = (m) => {
@@ -155,7 +148,7 @@ export default function ModelsTable() {
         </Badge>
       </Table.Td>
       <Table.Td>
-        <Group gap={4}>
+        <Group gap={4} wrap="wrap">
           {(m.capabilities || []).map((c) => (
             <Badge key={c} variant="dot" size="sm">
               {c}

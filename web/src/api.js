@@ -1,6 +1,3 @@
-// Centralized fetch. Optional bearer key (from the dashboard's key input) is
-// stored in localStorage so it survives reloads and is sent on every call.
-
 const KEY_STORAGE = "cf-proxy-api-key";
 
 export function getKey() {
@@ -32,4 +29,6 @@ async function req(path, options = {}) {
 export const fetchAccounts = () => req("/api/accounts");
 export const fetchStats = () => req("/api/stats");
 export const fetchModels = (fresh = false) => req(fresh ? "/api/models?fresh=1" : "/api/models");
+export const fetchLogs = () => req("/api/logs");
+export const clearLogs = () => req("/api/logs", { method: "DELETE" });
 export const runImport = () => req("/api/import", { method: "POST" });

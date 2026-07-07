@@ -12,4 +12,17 @@ export default defineConfig({
       "/v1": "http://127.0.0.1:8750",
     },
   },
+  build: {
+    // Split big vendors into their own cacheable chunks. Keeps the main app
+    // bundle small and lets react-markdown (only used in Logs) sit behind the
+    // lazy-loaded LogsTable chunk.
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          "react-vendor": ["react", "react-dom"],
+          "mantine": ["@mantine/core", "@mantine/hooks", "@mantine/notifications"],
+        },
+      },
+    },
+  },
 });

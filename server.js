@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 
 import { initDb } from "./lib/db.js";
 import { AccountPool } from "./lib/pool.js";
+import { RequestLog } from "./lib/log.js";
 import { openaiRouter, runRouter } from "./routes/chat.js";
 import { adminRouter } from "./routes/admin.js";
 
@@ -31,6 +32,7 @@ const log = {
 
 const db = initDb(OWN_DB);
 const pool = new AccountPool(db, { cooldown429: COOLDOWN_429, log });
+const requestLog = new RequestLog({ capacity: 500 });
 
 const app = express();
 app.use(express.json({ limit: "1mb" }));
@@ -59,13 +61,15 @@ app.use((req, res, next) => {
 });
 
 const pick = () => pool.peekAccount();
-app.use("/v1", openaiRouter({ pool, maxRetries: MAX_RETRIES, log, pick }));
-app.use("/ai", runRouter({ pool, maxRetries: MAX_RETRIES, log, pick }));
-app.use("/", adminRouter({ db, pool, ninePath: NINE_DB, log, pick }));
+app.use("/v1", openaiRouter({ pool, maxRetries: MAX_RETRIES, log, pick, requestLog }));
+app.use("/ai", runRouter({ pool, maxRetries: MAX_RETRIES, log, pick, requestLog }));
+app.use("/", adminRouter({ db, pool, ninePath: NINE_DB, log, pick, requestLog }));
 
 const webDist = join(__dirname, "web", "dist");
 if (existsSync(webDist)) {
-  app.use(express.static(webDist));
+  app.use(express.static(webDist, { maxAge: 0, etag: true, lastModified: true }));
+  // HTML must never be cached — it references hashed assets that change on rebuild.
+  app.get("/", (_req, res) => res.sendFile(join(webDist, "index.html")));
   app.get("*", (_req, res) => res.sendFile(join(webDist, "index.html")));
 } else {
   log.warn("web/dist not built — dashboard unavailable (run: npm run build)");

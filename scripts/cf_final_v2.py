@@ -1,0 +1,170 @@
+#!/usr/bin/env python3
+"""CF Signup - wait for form then submit"""
+from playwright.sync_api import sync_playwright
+import requests, time, json
+
+def log(msg):
+    print(f"[{time.strftime('%H:%M:%S')}] {msg}", flush=True)
+
+email = f"cf{int(time.time())}@hilmal.store"
+pw = "CfSignup123!"
+log(f"Email: {email}")
+
+BRD = 'http://brd-customer-hl_c0f6789c-zone-web_unlocker1:ds3ovbwhs69y@brd.superproxy.io:33335'
+TWOCAPTCHA_KEY = '3da28555894fd89bb569b748731e9400'
+SITEKEY = '0x4AAAAAAAJel0iaAR3mgkjp'
+PAGE_URL = 'https://dash.cloudflare.com/sign-up'
+
+with sync_playwright() as p:
+    browser = p.chromium.launch(
+        headless=True,
+        executable_path="/snap/chromium/current/usr/lib/chromium-browser/chrome",
+        args=[
+            "--no-sandbox", "--disable-setuid-sandbox",
+            "--ignore-certificate-errors",
+            "--allow-running-insecure-content",
+            "--ignore-certificate-errors-spki-list=*",
+        ]
+    )
+    ctx = browser.new_context(
+        proxy={"server": "http://brd.superproxy.io:33335", "username": "brd-customer-hl_c0f6789c-zone-web_unlocker1", "password": "ds3ovbwhs69y"},
+    )
+    page = ctx.new_page()
+    
+    log("Loading page via BD...")
+    page.goto("https://dash.cloudflare.com/sign-up", timeout=90000)
+    
+    # Explicitly wait for email input
+    log("Waiting for email input...")
+    try:
+        email_input = page.wait_for_selector('input[name="email"]', timeout=30000)
+        log(f"Email input found: {email_input is not None}")
+    except:
+        log("Email input not found!")
+        page.screenshot(path='/tmp/cf_noform.png')
+        browser.close()
+        exit(1)
+    
+    # Fill form
+    page.fill('input[name="email"]', email)
+    page.fill('input[name="password"]', pw)
+    log("Form filled!")
+    
+    # Intercept API
+    captured_req = [None]
+    captured_res = [None]
+    
+    def on_request(req):
+        if '/api/v4/user/create' in req.url:
+            captured_req[0] = {'headers': dict(req.headers), 'body': req.post_data}
+    
+    def on_response(res):
+        if 'user/create' in res.url:
+            captured_res[0] = res
+    
+    page.on("request", on_request)
+    page.on("response", on_response)
+    
+    log("Clicking submit...")
+    page.click('button[type="submit"]')
+    time.sleep(6)
+    
+    log(f"Title: {page.title()}")
+    
+    if captured_res[0]:
+        log(f"API status: {captured_res[0].status}")
+    
+    if not captured_req[0]:
+        log("No create API!")
+        browser.close()
+        exit(1)
+    
+    req = captured_req[0]
+    body_data = json.loads(req['body'])
+    
+    # Solve Turnstile
+    log("\n=== Solving via 2Captcha ===")
+    r = requests.get(
+        f'http://2captcha.com/in.php?key={TWOCAPTCHA_KEY}&method=turnstile&pageurl={PAGE_URL}&sitekey={SITEKEY}&json=1',
+        timeout=15
+    )
+    log(f"Submit: {r.text}")
+    
+    try:
+        result = r.json()
+        if result.get('status') == 1:
+            captcha_id = result['request']
+            for i in range(40):
+                time.sleep(5)
+                r2 = requests.get(
+                    f'http://2captcha.com/res.php?key={TWOCAPTCHA_KEY}&action=get&id={captcha_id}&json=1',
+                    timeout=15
+                )
+                resp = r2.json()
+                if resp.get('status') == 1:
+                    token = resp['request']
+                    log(f"GOT TOKEN: {token[:30]}...")
+                    
+                    # Get fresh security token
+                    sec = page.evaluate("() => document.querySelector('input[name=\"security_token\"]')?.value || ''")
+                    
+                    # Build body with token
+                    new_body = {
+                        "email": email,
+                        "password": pw,
+                        "mrk_optin": True,
+                        "security_token": sec or body_data.get("security_token", ""),
+                        "method": "Onboarding: New_v2",
+                        "locale": "en-US",
+                        "legal_stamp": body_data.get("legal_stamp", ""),
+                        "opt_ins": {},
+                        "mrktCheckboxDisplayed": False,
+                        "hCaptchaDisplayed": False,
+                        "cf_challenge_response": token
+                    }
+                    
+                    # Submit via browser fetch
+                    log("Submitting via browser fetch with token...")
+                    result = page.evaluate(f"""
+                        async () => {{
+                            try {{
+                                const resp = await fetch('https://dash.cloudflare.com/api/v4/user/create', {{
+                                    method: 'POST',
+                                    headers: {{
+                                        'Content-Type': 'application/json',
+                                        'Origin': 'https://dash.cloudflare.com',
+                                        'Referer': 'https://dash.cloudflare.com/sign-up',
+                                    }},
+                                    body: JSON.stringify({json.dumps(new_body)}),
+                                }});
+                                const text = await resp.text();
+                                return {{ status: resp.status, body: text }};
+                            }} catch(e) {{
+                                return {{ error: e.message }};
+                            }}
+                        }}
+                    """)
+                    
+                    log(f"Result: {result}")
+                    
+                    if result.get('status') == 200:
+                        log("SUCCESS! Account created!")
+                    else:
+                        try:
+                            err = json.loads(result.get('body', '{}'))
+                            log(f"Error: {json.dumps(err, indent=2)}")
+                        except:
+                            log(f"Body: {result.get('body', '')[:200]}")
+                    break
+                elif 'CAPCHA_NOT_READY' in str(resp):
+                    log(f"Poll {i+1}...")
+                    continue
+                else:
+                    log(f"Error: {resp}")
+                    break
+    except Exception as e:
+        log(f"Exception: {e}")
+    
+    browser.close()
+
+log("=== Done ===")

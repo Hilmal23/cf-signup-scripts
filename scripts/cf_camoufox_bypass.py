@@ -23,7 +23,7 @@ def signup():
     
     with Camoufox(
         headless=True,
-        geoip=True,  # Auto-detect IP-based geolocation
+        geoip=False,  # No geoip extra installed
         disable_coop=True,  # KEY: allows clicking Turnstile iframe checkbox!
         i_know_what_im_doing=True,  # Allow all configs
         debug=False,

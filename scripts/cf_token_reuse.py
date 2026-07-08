@@ -11,7 +11,7 @@ def log(msg):
     print(f"[{time.strftime('%H:%M:%S')}] {msg}", flush=True)
 
 TWOCAPTCHA_KEY = "3da28555894fd89bb569b748731e9400"
-SITEKEY = "8732e7fe-bf77-5ee5-bb3f-f2004f0769ae"
+SITEKEY = "0x4AAAAAAAJel0iaAR3mgkjp"
 PAGE_URL = "https://dash.cloudflare.com/sign-up"
 CHROMIUM = "/snap/chromium/current/usr/lib/chromium-browser/chrome"
 PROXY = {'server': 'http://brd.superproxy.io:33335', 'username': 'brd-customer-hl_c0f6789c-zone-web_unlocker1', 'password': 'ds3ovbwhs69y'}
